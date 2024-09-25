@@ -1,0 +1,4 @@
+{
+    "haskell.cabalFormattingProvider": "cabal-gild",
+    "haskell.sessionLoading": "multipleComponents"
+}
