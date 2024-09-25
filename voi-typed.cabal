@@ -15,8 +15,9 @@ common warnings
 
 executable voi-typed
   import: warnings
+  ghc-options: -O0 -threaded -rtsopts
   main-is: Main.hs
-  -- other-modules:
+  other-modules: Types
   -- other-extensions:
   build-depends:
     aeson,

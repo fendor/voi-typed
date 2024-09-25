@@ -3,46 +3,39 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
-
 {-# OPTIONS_GHC -ddump-simpl -ddump-to-file -dsuppress-all #-}
 
 module Main where
 
+import GHC.Debug.Stub (withGhcDebug)
+
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
-import Data.Map.Lazy (Map)
-import qualified Data.Map.Lazy as Map
+import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as Text
-import GHC.Debug.Stub (withGhcDebug)
-import GHC.Generics
 import Network.Wai.Handler.Warp
 import Network.Wai.Logger
 import Servant
 
-data ApiData = ApiData
-  { responseLength :: !Int
-  }
-
-data MyState = MyState
-  { stateVar :: TVar (Map Int ApiData)
-  , indexVar :: TVar Int
-  }
+import Types
 
 main :: IO ()
 main = withGhcDebug application
 
 application :: IO ()
 application = do
+  putStrLn "Server is ready!"
   indexRef <- newTVarIO 0
   apiDataVar <- newTVarIO Map.empty
 
   let
     initialState = MyState apiDataVar indexRef
-  withStdoutLogger $ \aplogger -> do
+  withStdoutLogger $ \_aplogger -> do
     let
-      settings = setPort 8085 $ setLogger aplogger defaultSettings
+      settings = setPort 8085 defaultSettings
+    -- \$ setLogger aplogger defaultSettings
     runSettings settings (app initialState)
 
 app :: MyState -> Application
@@ -56,48 +49,55 @@ myApiApp initialDb =
   nt :: MyState -> AppM a -> Handler a
   nt s x = runReaderT x s
 
-type AppM = ReaderT MyState Handler
-
-type Api = NamedRoutes MyApi
-
-data MyApi mode = MyApi
-  { postData ::
-      mode
-        :- "api"
-          :> QueryParam "x" Int
-          :> QueryParam "y" Int
-          :> Post '[JSON] Text
-  }
-  deriving (Generic)
-
 handler :: ServerT Api AppM
 handler =
   MyApi
     { postData = postHandler
+    , getData = getHandler
     }
 
 postHandler :: Maybe Int -> Maybe Int -> AppM Text
 postHandler (Just x) (Just y) = do
   let
-    resultMessage =
-      Text.unlines
-        [ "Thanks for using the addition service!"
-        , ""
-        , "We are proud project maintained by memory leaks."
-        , "We add your inputs and produce the result:"
-        , "x: " <> Text.pack (show x)
-        , "y: " <> Text.pack (show y)
-        , ""
-        , "Result: " <> Text.pack (show $ x + y)
-        ]
+    ls = [x .. y]
+    s = sum ls
 
   db <- asks stateVar
   index <- asks indexVar
 
   liftIO $ atomically $ do
     n <- readTVar index
-    modifyTVar' db (Map.insert n (ApiData $ Text.length resultMessage))
+    modifyTVar' db (Map.insert n (ApiData $ length ls))
     modifyTVar' index (+ 1)
 
-  pure resultMessage
+  pure $
+    Text.unlines
+      [ "Thanks for using the summation service!"
+      , ""
+      , "We are proud project maintained by memory leaks."
+      , ""
+      , "We sum up all elements from x and until y:"
+      , ""
+      , "x: " <> Text.pack (show x)
+      , "y: " <> Text.pack (show y)
+      , ""
+      , "sum from x to y: " <> Text.pack (show s)
+      ]
 postHandler _ _ = throwError err404
+
+getHandler :: ReaderT MyState Handler Double
+getHandler = do
+  db <- asks stateVar
+  -- out <- liftIO $ readTVarIO db2
+  -- liftIO $ print $ sum $ fmap (Text.length . snd) $ Map.assocs out
+  liftIO $ putStrLn $ "Cleared database"
+  liftIO $ atomically $ do
+    -- writeTVar db2 Map.empty
+    myMap <- readTVar db
+    let
+      s = sum $ fmap (listLengths . snd) $ Map.assocs myMap
+      len = Map.size myMap
+    pure $
+      if len == 0
+        then 0.0
+        else fromIntegral s / fromIntegral len
